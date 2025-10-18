@@ -1,23 +1,51 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
+# ========== GLOBAL ==========
+node_modules/
 .DS_Store
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Entornos
+.env
+.env.*
+!.env.example
+
+# IDE / Sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+
+# ========== FRONTEND ==========
+frontend/node_modules/
+frontend/build/
+frontend/.pnp
+frontend/.pnp.js
+frontend/coverage/
+
+# Local envs en el front
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.production.local
+frontend/.env.test.local
+
+# ========== BACKEND ==========
+backend/node_modules/
+backend/dist/
+backend/build/
+backend/coverage/
+
+# Archivos subidos
+backend/uploads/
+backend/temp/
+temp/
+
+# Prisma
+backend/prisma/dev.db
+backend/prisma/dev.db-journal
+backend/prisma/migrations/*/README.md
+
+# ========== MISC ==========
+# Logs en cualquier parte
+**/*.log

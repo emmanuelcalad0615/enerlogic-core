@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id             Int                @id @default(autoincrement())
+  nombre         String
+  email          String             @unique
+  password       String
+  rol            String             @default("usuario") // usuario | soporte | admin
+  facturas       Factura[]
+  consumos       ConsumoHistorico[]
+  alertas        Alerta[]
+  recomendaciones Recomendacion[]
+  solicitudes    SolicitudSoporte[]        // solicitudes creadas por el usuario
+  asignadas      SolicitudSoporte[] @relation("SoporteAsignado") // solicitudes asignadas a soporte
+  notasCreadas   NotaSoporte[]             // notas creadas por el usuario
+  creadoEn       DateTime           @default(now())
+}
+
+model Factura {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id])
+  numero       String    @unique
+  fechaEmision DateTime
+  consumoKwh   Float
+  valorTotal   Float
+  archivoUrl   String?
+  estado       String    @default("pendiente") // pagada | pendiente
+  creadoEn     DateTime  @default(now())
+}
+
+model ConsumoHistorico {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id])
+  fecha        DateTime  @default(now())
+  consumoKwh   Float
+  costo        Float?
+}
+
+model Recomendacion {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id])
+  titulo       String
+  descripcion  String
+  leida        Boolean   @default(false)
+  creadoEn     DateTime  @default(now())
+}
+
+model Alerta {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id])
+  tipo         String    // sobreconsumo, equipo_ineficiente, etc
+  mensaje      String
+  activa       Boolean   @default(true)
+  creadoEn     DateTime  @default(now())
+}
+
+model SolicitudSoporte {
+  id           Int       @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario   @relation(fields: [usuarioId], references: [id])
+  asignadoAId  Int?
+  asignadoA    Usuario?  @relation("SoporteAsignado", fields: [asignadoAId], references: [id])
+  estado       String    @default("pendiente") // pendiente | en_progreso | resuelta
+  descripcion  String
+  notas        NotaSoporte[]
+  creadoEn     DateTime  @default(now())
+}
+
+model NotaSoporte {
+  id           Int       @id @default(autoincrement())
+  solicitudId  Int
+  solicitud    SolicitudSoporte @relation(fields: [solicitudId], references: [id])
+  autorId      Int
+  autor        Usuario    @relation(fields: [autorId], references: [id])
+  contenido    String
+  creadoEn     DateTime   @default(now())
+}

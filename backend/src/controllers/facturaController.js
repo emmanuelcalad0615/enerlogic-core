@@ -76,40 +76,51 @@ const ocrPDF = async (rutaPDF, outputDir) => {
 };
 
 /* Extrae datos de texto OCR (Factura EPM / Emvarias) */
+/* Extrae datos de texto OCR (Factura EPM / Emvarias o formato 'Contrato #### ####') */
 const extraerDatosFactura = (texto) => {
   const cleanText = texto.replace(/\s+/g, " ").toLowerCase();
 
-  // --- Buscar número o referencia ---
-  const numeroContrato =
-    cleanText.match(/(refer\w*\s*(de)?\s*pago[:\s-]*)([a-z0-9\-]+)/i)?.[3] ||
-    cleanText.match(/(n[úu]mero|num\.?|factura|ref\.?)[:\s-]*([a-z0-9\-]+)/i)?.[2] ||
-    cleanText.match(/producto[:\s]+(\d{6,})/i)?.[1] ||
-    `F-${Date.now()}`;
+  // --- 1️⃣ NUEVO: Detección directa del formato "Contrato 11706073 231.222" ---
+  const contratoLineaMatch = cleanText.match(/contrato\s+(\d+)[^\d]+([\d.,]+)/i);
 
-  // --- Buscar valor total ---
-  // Captura "total a pagar" aunque haya basura o salto de línea antes del número
-const valorTotalMatch = cleanText.match(
-  /(total\s*a\s*pagar)[\s\S]{0,50}?(\$?\s*[\d.,]{3,})/i
-);
+  let numeroContrato = null;
+  let valorTotal = 0;
+  //  EXTRA: REFERENTE DE PAGO
+  const referentePagoMatch = cleanText.match(/referente\s*de\s*pago[:\s-]*([a-z0-9\-]+)/i);
+  const referentePago = referentePagoMatch ? referentePagoMatch[1].trim() : null;
+  if (contratoLineaMatch) {
+    numeroContrato = contratoLineaMatch[1]; // primer número después de "Contrato"
+    valorTotal = parseInt(contratoLineaMatch[2].replace(/[^\d]/g, ""), 10); // segundo número (valor total)
+  } else {
+    // --- 2️⃣ Si no encuentra ese formato, usar las detecciones anteriores ---
+    numeroContrato =
+      cleanText.match(/(refer\w*\s*(de)?\s*pago[:\s-]*)([a-z0-9\-]+)/i)?.[3] ||
+      cleanText.match(/(n[úu]mero|num\.?|factura|ref\.?)[:\s-]*([a-z0-9\-]+)/i)?.[2] ||
+      cleanText.match(/producto[:\s]+(\d{6,})/i)?.[1] ||
+      `F-${Date.now()}`;
 
-const parseNumero2 = (num) => {
-  if (!num) return 0; // si viene null, undefined o vacío
-  const str = String(num); // se asegura de que sea string
-  const limpio = str.replace(/[^\d]/g, ""); // quita todo menos dígitos
-  return parseInt(limpio, 10) || 0;
-};
+    const valorTotalMatch = cleanText.match(
+      /(total\s*a\s*pagar)[\s\S]{0,50}?(\$?\s*[\d.,]{3,})/i
+    );
+    
 
+    const parseNumero2 = (num) => {
+      if (!num) return 0;
+      const str = String(num);
+      const limpio = str.replace(/[^\d]/g, "");
+      return parseInt(limpio, 10) || 0;
+    };
 
-const valorTotal = valorTotalMatch ? parseNumero2(valorTotalMatch[2]) : 0;
+    valorTotal = valorTotalMatch ? parseNumero2(valorTotalMatch[2]) : 0;
+  }
 
-
-  // --- Buscar consumo ---
+  // --- 3️⃣ Buscar consumo ---
   const consumoKwh =
     cleanText.match(/energ[ií]a\s+(\d+)\s*kwh/i)?.[1] ||
     cleanText.match(/(\d+)\s*kwh/i)?.[1] ||
     "0";
 
-  // --- Buscar fecha aproximada ---
+  // --- 4️⃣ Buscar fecha ---
   const mesAño = cleanText.match(
     /(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)[^\d]*(\d{4})/i
   );
@@ -117,17 +128,15 @@ const valorTotal = valorTotalMatch ? parseNumero2(valorTotalMatch[2]) : 0;
     ? new Date(`${mesAño[2]}-${mesAño[1].substring(0, 3)}-01`)
     : new Date();
 
-  // --- Limpieza del número ---
-  const parseNumero = (num) =>
-    num ? parseFloat(num.replace(/[^\d,.-]/g, "").replace(",", ".")) : 0;
-
   return {
-    numero: numeroContrato?.trim() || null,
-    consumoKwh: parseFloat(consumoKwh) || 0,
-    valorTotal: valorTotal,
-    fechaEmision,
-  };
+  numero: numeroContrato?.trim() || null,
+  referentePago,
+  consumoKwh: parseFloat(consumoKwh) || 0,
+  valorTotal,
+  fechaEmision,
 };
+};
+
 
 
 export const registrarFactura = async (req, res) => {
@@ -171,15 +180,16 @@ export const registrarFactura = async (req, res) => {
     }
 
     const factura = await prisma.factura.create({
-      data: {
-        usuarioId: parseInt(usuarioId),
-        numero: datos.numero,
-        fechaEmision: datos.fechaEmision,
-        consumoKwh: datos.consumoKwh,
-        valorTotal: datos.valorTotal,
-        archivoUrl: archivo.path,
-      },
-    });
+  data: {
+    usuarioId: parseInt(usuarioId),
+    contrato: datos.numero,            // antes era "numero"
+    referentePago: datos.referentePago, // ✅ Nuevo
+    fechaEmision: datos.fechaEmision,
+    consumoKwh: datos.consumoKwh,
+    valorTotal: datos.valorTotal,
+    archivoUrl: archivo.path,
+  },
+});
 
     await prisma.consumoHistorico.create({
       data: {
@@ -195,9 +205,19 @@ export const registrarFactura = async (req, res) => {
       factura,
     });
   } catch (error) {
-    console.error("Error procesando la factura:", error);
-    res.status(500).json({ error: "Error procesando la factura", detalle: error.message });
-  } finally {
+  if (error.code === "P2002") {
+    return res.status(400).json({
+      error: "Esta factura ya fue registrada (referente duplicado)"
+    });
+  }
+
+  console.error("Error procesando la factura:", error);
+  res.status(500).json({
+    error: "Error procesando la factura",
+    detalle: error.message
+  });
+} 
+  finally {
     // Limpieza: eliminar temp y archivo original
     try {
       if (tempDir) eliminarCarpeta(tempDir);

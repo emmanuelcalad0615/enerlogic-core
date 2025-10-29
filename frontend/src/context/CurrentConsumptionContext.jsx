@@ -23,7 +23,7 @@ export const CurrentConsumptionProvider = ({ children }) => {
     }
   };
 
-  const PROB_PICO_ALTO = 0.1;   
+  const PROB_PICO_ALTO = 0.7;   
 const PROB_PICO_MEDIO = 0.1;  
 
 const calcularConsumo = (hora) => {
